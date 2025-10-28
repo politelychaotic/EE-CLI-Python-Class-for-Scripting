@@ -92,6 +92,8 @@ class RunCLI:
         bridge_file = "bridges.txt"
         filepath = self.account_dir / bridge_file
         filepath = str(filepath)
+
+        self.check_if_logged_in()
         
 
         self.run([CLI, "bridge", "list", "--include", "esn"], filepath)
@@ -113,6 +115,8 @@ class RunCLI:
         filepath = self.account_dir / "bridges.txt"
 
         filepath = str(filepath)
+
+        self.check_if_logged_in()
 
         with open(filepath, "r", encoding="utf-8") as bridges:
             for bridge in bridges:
@@ -296,6 +300,8 @@ class RunCLI:
 
         Use a for loop if you need a list of cameras to be updated.
         """
+
+        self.check_if_logged_in()
 
         output = ""
         print(f"[+] Running: {CLI} camera set {setting} {option} --esn {esn}")
