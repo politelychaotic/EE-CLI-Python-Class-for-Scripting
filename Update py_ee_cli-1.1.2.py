@@ -268,7 +268,9 @@ class RunCLI:
                 try:
                     if status.stdout.split()[-1] in CHECK:
                         failed_list.append(status.stdout)
-                    elif status.stdout.split()[-1] in AFFIRM or re.match(PATTERN, status.stdout.split()[-1]):
+                    elif status.stdout.split()[-1] in AFFIRM or re.match(PATTERN, status.stdout.split()[-1]) and setting != "cloud-retention": # Make sure setting is NOT cloud ret as 1 is the val for M10
+                        pass_list.append(status.stdout)
+                    elif status.stdout.split()[-1] in AFFIRM or re.match(PATTERN, status.stdout.split()[-1]) and status.stdout.split()[-1] > 1:  # Add for adding cloud ret above M10 value
                         pass_list.append(status.stdout)
                     else:
                         print(f"[!!] Error with {camera} : {status.stdout.split()[-1]}")
@@ -338,14 +340,18 @@ class RunCLI:
     
         with open(file, "r", encoding="utf-8") as reader:
             cameras = reader.readlines()
+            
+            if setting == "cloud-retention":     # Make sure correct CHECK list is used depending on the setting we are checking
+                check = CHECK_CLOUD_RET
+            else:
+                check = CHECK
+                
             for camera in cameras:
                 camera = camera.strip()
                 print(f"[+] Getting camera settings {camera}")
                 setting_value = subprocess.run([CLI, "camera", "get", setting, "--esn", camera], capture_output=True, text=True)
                 try:
                     setting_value = setting_value.stdout.split()[-1]    # Get last column and interpret as setting value
-                    if setting == "cloud-retention":
-                        check = CHECK_CLOUD_RET
                     if setting_value in check:
                         not_set_cams.append(camera)
                     elif setting_value not in check:
