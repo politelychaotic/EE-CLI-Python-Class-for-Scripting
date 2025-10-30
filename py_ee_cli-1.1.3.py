@@ -22,6 +22,8 @@ AFFIRM = ["yes"]
 
 PATTERN = r"^[1-9]\d*$"
 
+ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
 
 class RunCLI:
     """
@@ -175,14 +177,16 @@ class RunCLI:
         accounts = subprocess.run([CLI, "account", "list", "-s", "--include", "id"], capture_output=True, text=True)
         #print(accounts.stdout)
 
-        self.update_account_list(accounts.stdout)    # update account list in instance automatically when you get accounts
+        accounts = ansi_escape.sub('', accounts.stdout)  #fixed this: ['\x1b[1m00111817\x1b[0m
+
+        self.update_account_list(accounts)    # update account list in instance automatically when you get accounts
         #print("accounts", self.account_list)
 
         if self.account_list:
             filepath = str(self.out_dir)+"/"+account_file
 
-            with open(filepath, "w", newline="", encoding="utf-8") as writer:
-                writer.write(accounts.stdout.strip())    #might fix this: ['\x1b[1m00111817\x1b[0m
+            with open(filepath, "w", encoding="utf-8") as writer:
+                writer.write(accounts)    #might fix this: ['\x1b[1m00111817\x1b[0m
             writer.close()
 
     
