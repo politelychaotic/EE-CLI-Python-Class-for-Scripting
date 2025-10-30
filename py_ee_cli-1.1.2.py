@@ -7,6 +7,7 @@ from pathlib import Path
 import csv
 import re
 import contextlib
+import json
 
 
 CLI = "./een"
@@ -399,8 +400,26 @@ class RunCLI:
     
                 
 
+    
+    def report_json(self, fname: str, data: list):
+        """
+        Write all in JSON format -> file.
+        """
+        pass
+                
+
     def create_csv_report(self):
         pass
+
+
+    def save_to_file(self, fname: str, data: str):
+        """
+        Function to save output to a file.
+        :param fname: filepath to write to in str format
+        :param data: data to write to file in str format
+        """
+        pass
+        
 
     @staticmethod
     def __clean_up___():
