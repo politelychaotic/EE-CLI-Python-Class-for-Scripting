@@ -53,6 +53,8 @@ class RunCLI:
         self.username = username
         self.password = password
 
+        self.check_if_logged_in("[+] Logging in...")    # Log in if not logged in on init
+
 
         # Creating directory for output
         self.working_directory = Path.cwd()
@@ -64,7 +66,6 @@ class RunCLI:
         except Exception as e:
             print(f"An error occurred creating the output directory: {e}")
 
-        self.check_if_logged_in("[+] Logging in...")
 
 
     def check_if_logged_in(self, msg: Optional[str] = None):
