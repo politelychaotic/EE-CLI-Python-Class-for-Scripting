@@ -76,3 +76,30 @@ class ParseJSON:
 
         return common_elements
 
+
+
+class json_parser:
+    def __init__(self, filepath: str):
+        self.filepath = filepath
+
+        with open(filepath, "r") as read_json:
+            self.my_dict = json.load(read_json) 
+
+        self.all_keys = list(self.my_dict.keys())
+        self.subaccounts = self.my_dict['sub_accounts']
+
+        self.current_account = self.my_dict['parent']
+ 
+
+    def get_key(self, key: str, account: Optional[str] = None):
+        if account:
+            account_dict = self.my_dict[account]
+        else:
+            account = self.current_account
+        
+        key_dict = next((item for item in self.my_dict[account] if key in item), None)
+        if key_dict:
+            key_value = key_dict[key]
+            return key_value
+        return key_dict
+
