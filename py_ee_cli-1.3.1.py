@@ -12,7 +12,7 @@ CLI = "./een"
 ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 
-class EE_CLI:
+class ee_cli:
     """
     Class to manage CLI for scripts.
 
@@ -26,7 +26,7 @@ class EE_CLI:
     :update_cams_by_esn: camfile, setting
     """
 
-    def __init__(self, account_id: str, username: str, password: str):
+    def __init__(self, account_id: str, username: str, password: str, new_session=True):
         self.account_id = account_id
         self.current_account = account_id
         self.index = 0
@@ -34,7 +34,11 @@ class EE_CLI:
         self.username = username
         self.password = password
 
-        self.check_if_logged_in("[+] Logging in...")    # Log in if not logged in on init
+        if new_session:
+            self.new_session()
+
+        self.keys = {'cloud-preview-only': ['pr1', 'pr1_failed'], 'scene-analytics': ['scene_analytics_enabled', 'no_scene_analytics'], 'cloud-retention': ['not_m10', 'm10']}
+        self.responses = {'cloud-preview-only': ['yes', 'no'], 'scene_analytics': ['yes'], 'cloud-retention': [(2, 365*5), (0,1)]} 
 
         self.my_dict = {
             "parent": self.account_id,
@@ -55,7 +59,7 @@ class EE_CLI:
 
 
     def check_if_logged_in(self, msg="[->] logging back in..."):
-        logged_in = subprocess.run([CLI, "account", "list"], capture_output=True, text=True)
+        logged_in = subprocess.run([CLI, "user", "list"], capture_output=True, text=True)
         print(f"{logged_in.stderr}")
         if logged_in.stderr.strip() == "error: please login to continue" or logged_in.stderr.strip() == "error: token expired please login again to continue":
             self.login()
@@ -70,7 +74,32 @@ class EE_CLI:
 
         except Exception as e:
             print(f"[!!] An error occurred: {e}")
-    
+
+
+    def new_session(self, msg="[->] Starting new session..."):
+        """
+        :param self: Description
+        Logout of previous session
+        """
+        result = self.run([CLI, "user", "list"])
+        if result != "error: please login to continue" or result != "error: token expired please login again to continue":
+            print(msg)
+            self.logout()
+            self.login()
+
+
+
+
+    def logout(self):
+        """
+        Log out of the current session
+        """
+        try:
+            self.run([CLI, "auth", "logout"])
+
+        except Exception as e:
+            print(f"[!!] An error occurred: {e}")
+
 
     def get_accounts(self):
 
@@ -198,14 +227,17 @@ class EE_CLI:
         failed = []
         passed = []
         unknown = []
+
+        if not option:
+            option = set_value
+        
+        # Update this to use key dict
         key_passed = setting+"_"+option
-        key_failed = setting+"_"+option+"_failed"
-        key_unknown = setting+"_"+option+"_unknown"
+        key_failed = setting+"_"+"_failed"
+        key_unknown = setting+"_"+"_unknown"
 
         self.check_if_logged_in()
 
-        if option == None:
-            option = set_value
 
         for camera in camera_list:
             self.run([CLI, "camera", "set", setting, set_value, "--esn", camera])
@@ -236,9 +268,9 @@ class EE_CLI:
         
 
         return unknown, failed, passed
-          
-        
-    def get_all_camera_settings_by_esn(self, cameras: list[str], setting: str, option: list[str], key: Optional[str] = None) -> tuple[list, list, list]:
+            
+
+    def get_all_camera_settings_by_esn(self, cameras: list[str], setting: str, option: Optional[list[str]] = None, key: Optional[str] = None) -> tuple[list, list, list]:
         """
         :param cameras: list of cameras on account
         :param setting: the setting we want to check
@@ -250,13 +282,18 @@ class EE_CLI:
         matched = []
         unknown = []
 
-        if not key:
-            key_off = setting+"_not_"+option[0]                                       #  "unmatched"
-            key_on = setting+"_"+option[0]                                            #  "matched"
-        elif key:
-            key_off = "not_" + key                                                     #  "unmatched"
-            key_on = key                                                              #  "matched"
+        
 
+        if not key:
+            key_off = self.keys[setting][0]                                       #  enabled
+            key_on = self.keys[setting][1]                                        #  not enabled
+        elif key:
+            key_off = "not_" + key                                           #  enabled                                          
+            key_on = key                                                     #  not enabled
+
+        if not option:
+            option = self.responses[setting][0]  #  enabled
+            option = self.responses[setting][1]  #  not enabled 
 
         
         self.check_if_logged_in()  # Ensure we are still logged in. Will work on a better solution...
@@ -272,6 +309,8 @@ class EE_CLI:
                 print(f'[!!] Index error for {camera}:{err}')
                 print(f"[+] Adding {camera} -> unknown list...")
                 unknown.append(camera)
+            
+
 
             if type(option) == str: 
                 if setting_value == option:
