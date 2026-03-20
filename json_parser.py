@@ -1,105 +1,141 @@
-from py_ee_cli import CLI
-import json
+from json_parser_class import JSONAccountParser
+from py_ee_cli import ee_cli, CLI
+import subprocess
+import argparse
 
 
-class ParseJSON:
-    def __init__(self, filepath: str, setting1: str, setting2: str):
-        self.filepath = filepath
-        self.settings = [setting1, setting2]
-        self.iterator = 0
 
-        with open(filepath, "r") as read_json:
-            self.my_dict = json.load(read_json) 
+ext = 'json'
 
-        self.all_keys = list(self.my_dict.keys())
-        self.subaccounts = self.my_dict['sub_accounts']
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Process JSON reports for camera settings.')
+    parser.add_argument('--parent', required=True, help='Parent account ID')
+    parser.add_argument('--sub', required=True, help='Sub account ID')
+    parser.add_argument('--settings_keyword', required=True, help='Settings keyword')
+    parser.add_argument('--set_to', required=True, help='Set to value')
+    parser.add_argument('--positive_result', required=True, help='Positive result value')
+    parser.add_argument('--filename', required=True, help='Output filename')
+    args = parser.parse_args()
 
-        self.current_account = self.my_dict['parent']
+    # Initialize parser
+    parent = args.parent
+    sub = args.sub
+    settings_keyword = args.settings_keyword
+    set_to = args.set_to
+    positive_result = args.positive_result
+    filename = args.filename
+    username = 'username'  # Replace with actual username if needed
+    filepath = f'/home/{username}/ee_cli/output/{filename}'
+
+    not_matching = 'failed'
+    matching = 'passed'
+    unknown = 'unknown'
+
+    username = f'mpaoli+{parent}@een.com'
+    password = 'SuperSecure'
+    my_cli = ee_cli(account_id=parent, username=username, password=password)
+    my_cli.switch_account(sub)
+
+    parser = JSONAccountParser(filepath)
+
+
     
-    def switch_account(self):
-        if len(self.subaccounts) > 1:
-            try:
-                #subaccounts = self.all_keys[2:]
-                subaccounts = self.subaccounts
-                self.current_account = subaccounts[self.iterator]
-                account_dict = self.my_dict[self.current_account]
-                self.iterator = self.iterator + 1
+    # Get parent account
+    print(f"Parent Account: {parser.get_parent_account()}")
+    print(f"Sub Accounts: {parser.get_sub_accounts()}")
+    print()
+    
+    # Get all accounts
+    print(f"All Accounts: {parser.get_all_accounts()}")
+    print()
+    
+    # Get sections for account
+    account_id = parser.get_all_accounts()[0]
+    print(f"Sections in {account_id}: {parser.get_sections_for_account(account_id)}")
+    print()
+    
+    # Get items by section
+    sections = parser.get_sections_for_account(account_id)
+    for section in sections:
+        items = parser.get_items_by_section(account_id, section)
+        print(f"  {section}: {len(items)} items")
+    print()
+    
+    # Get all sections by account
+    all_sections = parser.get_all_sections_by_account()
+    for acc_id, sections_dict in all_sections.items():
+        print(f"Account {acc_id}:")
+        for section, items in sections_dict.items():
+            print(f"  {section}: {len(items)} items")
+    print()
+    
+    # Get item counts
+    print("Item counts by account:")
+    counts = parser.count_items_by_account()
+    for account_id, count in counts.items():
+        print(f"  {account_id}: {count} items")
 
-                return account_dict
+
+
+    ## Example of how to use the parser to update cameras based on the JSON report ##
+    all_accounts = parser.get_all_accounts()
+
+    for account in all_accounts:
+        sections = parser.get_sections_for_account(account)
+        print(f"Account {account} has sections: {sections}")
+
+        ## Format of sections goes: cameras, failed, passed, unknown. sections[0] is always cameras ##
+        print()
+        unmatched_items = []
+        result = next((s for s in sections if s.endswith(not_matching)), None)
+        if result:
+            items = parser.get_items_by_section(account, result)
+            print(f"  {result} has {len(items)} items: {items}")
+            print(f'[->] Updating cameras in {result} for account {account}...')
             
-            except KeyError as err:
-                print(f"Key Error for {self.current_account}:{err}")
+            for item in items:
+                command = subprocess.run([CLI, 'camera', 'get', settings_keyword, '--esn', item], capture_output=True, text=True)
+                print(command.stdout)
+                try:
+                    setting_value = command.stdout.split()[-1]
+                except IndexError:
+                    setting_value = "No"
+                print(setting_value)
+                if setting_value != positive_result:
+                    unmatched_items.append(item)
+            print()
 
-    def check_not_empty(self, value):
-        if value:
-            return 0
-        return 1
-
-    
-    def get_keys(self):
-        compare_list = []
-        for setting in self.settings:
-            value = self.find_key(account=self.current_account, key=setting)
-            compare_list.append(value)
+        result = next((s for s in sections if s.endswith(unknown)), None)
+        if result:
+            items = parser.get_items_by_section(account, result)
+            print(f"  {result} has {len(items)} items: {items}")
+            print(f'[->] Updating cameras in {result} for account {account}...')
+            for item in items:
+                command = subprocess.run([CLI, 'camera', 'get', settings_keyword, '--esn', item], capture_output=True, text=True)
+                print(command.stdout)
+                setting_value = command.stdout.split()[-1]
+                print(setting_value)
+                if setting_value != positive_result:
+                    unmatched_items.append(item)
+            print()
         
-        return compare_list
+        print(f"[!!] Unmatched items: {unmatched_items}")
 
-    def find_differences(self, compare: list):
-        key_1 = set(compare[0])
-        key_2 = set(compare[1])
-        diff = key_1 ^ key_2
-        return diff
-
-
-
-    def find_account_dict(self, account):
-        pass
-
-    def find_key(self, account, key) -> list:
-        key_dict = next((item for item in self.my_dict[account] if key in item), None)
-        if key_dict:
-            key_value = key_dict[key]
-            return key_value
+        failed_items = []
+        '''for item in unmatched_items:
+            print(f'[->] Updating camera {item} to: {settings_keyword} {set_to}...')
+            command = subprocess.run([CLI, 'camera', 'set', settings_keyword, set_to, '--esn', item], capture_output=True, text=True)
+            print(command.stdout)
+            setting_value = command.stdout.split()[-1]
+            print(setting_value)
+            if setting_value != positive_result:
+                failed_items.append(item)
         
-        return key_dict
-
-    
-    def find_difference(self, value_1: list, value_2: list) -> set:
-        cmp1 = set(value_1)
-        cmp2 = set(value_2)
-        difference = cmp1 ^ cmp2
-
-        return difference
-    
-    def determine_list(self, item1: set, item2: list):
-        common_elements = item1.intersection(set(item2))
-
-        return common_elements
-
-
-
-class json_parser:
-    def __init__(self, filepath: str):
-        self.filepath = filepath
-
-        with open(filepath, "r") as read_json:
-            self.my_dict = json.load(read_json) 
-
-        self.all_keys = list(self.my_dict.keys())
-        self.subaccounts = self.my_dict['sub_accounts']
-
-        self.current_account = self.my_dict['parent']
- 
-
-    def get_key(self, key: str, account: Optional[str] = None):
-        if account:
-            account_dict = self.my_dict[account]
+        if failed_items:
+            print(f"[!!] Failed to update items: {failed_items}")
         else:
-            account = self.current_account
+            print("[!!] All items updated successfully!")'''
+
+
         
-        key_dict = next((item for item in self.my_dict[account] if key in item), None)
-        if key_dict:
-            key_value = key_dict[key]
-            return key_value
-        return key_dict
 
