@@ -4,6 +4,7 @@ from typing import Optional
 from pathlib import Path
 import re
 import json
+import sys
 
 
 CLI = "./een"
@@ -38,7 +39,9 @@ class ee_cli:
             self.new_session()
 
         self.keys = {'cloud-preview-only': ['pr1', 'pr1_failed'], 'scene-analytics': ['scene_analytics_enabled', 'no_scene_analytics'], 'cloud-retention': ['not_m10', 'm10']}
-        self.responses = {'cloud-preview-only': ['yes', 'no'], 'scene_analytics': ['yes'], 'cloud-retention': [(2, 365*5), (0,1)]} 
+        self.responses = {'cloud-preview-only': ['yes', 'no'], 'scene-analytics': ['yes', 'no'], 'cloud-retention': [(2, 1825), (0,1)], 'maximum-premise-retention': [(1, 1825)], 'minimum-premise-retention': [(0, 1825)]}
+        self.user_inputs = {'cloud-preview-only': ['enable', 'disable'], 'scene-analytics': ['enable', 'disable']} 
+        self.set_values = {'cloud-preview-only': ['--enable', '--disable'], 'scene-analytics': ['--enable', '--disable']} 
 
         self.my_dict = {
             "parent": self.account_id,
@@ -49,8 +52,7 @@ class ee_cli:
         
         # Creating directory for output
         self.working_directory = Path.cwd()
-        self.out_dir = self.working_directory / Path("output" + "_" + self.account_id)
-        self.account_dir = self.out_dir
+        self.out_dir = self.working_directory / Path("output")
 
         try:
             self.out_dir.mkdir(exist_ok=True)
@@ -59,9 +61,9 @@ class ee_cli:
 
 
     def check_if_logged_in(self, msg="[->] logging back in..."):
-        logged_in = subprocess.run([CLI, "user", "list"], capture_output=True, text=True)
-        print(f"{logged_in.stderr}")
-        if logged_in.stderr.strip() == "error: please login to continue" or logged_in.stderr.strip() == "error: token expired please login again to continue":
+        logged_in = self.run([CLI, "account", "switch", "-s"])
+        print(f"{logged_in}")
+        if logged_in == "error: please login to continue" or logged_in == "error: token expired please login again to continue":
             self.login()
             
             
@@ -70,7 +72,7 @@ class ee_cli:
         Log in to either a reseller or subaccount
         """
         try:
-            self.run([CLI, "auth", "login", "--username", self.username, "--password", self.password])
+            self.run([CLI, "auth", "login", "--username", self.username, "--password", self.password, "--v1"])   # adding '--v1' because for CLI Version 5.1.0 it is required to log in
 
         except Exception as e:
             print(f"[!!] An error occurred: {e}")
@@ -81,13 +83,11 @@ class ee_cli:
         :param self: Description
         Logout of previous session
         """
-        result = self.run([CLI, "user", "list"])
+        result = self.run([CLI, "account", "switch", "-s"])
         if result != "error: please login to continue" or result != "error: token expired please login again to continue":
             print(msg)
             self.logout()
-            self.login()
-
-
+        self.login()
 
 
     def logout(self):
@@ -197,28 +197,20 @@ class ee_cli:
         return cameras
     
 
-    def get_cams_per_bridge(self):
-        filepath = self.account_dir / "bridges.txt"
+    def get_cameras_by_bridge(self, bridge: str):
+        cameras_on_bridge =self.run([CLI, "camera", "list", "--bridge-esn", bridge, "--include", "esn"])
+        cameras = cameras_on_bridge.split()
+        self.account_list.append({f"cameras_on_{bridge}": cameras})
 
-        filepath = str(filepath)
-
-        self.check_if_logged_in()
-
-        with open(filepath, "r", encoding="utf-8") as bridges:
-            for bridge in bridges:
-                bridge = bridge.strip()
-                bridge_dir = self.account_dir / bridge  # Create directory for each bridge
-                bridge_dir.mkdir(exist_ok=True)         # and store cameras to a file there
-                camera_file = str(bridge_dir)+"/cameras.txt"  
-
-                self.run([CLI, "camera", "list", "--bridge-esn", bridge, "--include", "esn"], camera_file)
+        return cameras
 
 
-    def update_cameras_by_esn(self, camera_list: list[str], setting: str, set_value: str, option: Optional[str] = None) -> tuple[list, list, list]:
+
+    def update_cameras_by_esn(self, cameras: list[str], setting: str, set_value: str, option: Optional[str] = None) -> tuple[list, list, list]:
         """
         Will update a setting for all cameras in provided camera list to be set to set_option.
 
-        :param camera_list: list of cameras to update
+        :param cameras: list of cameras to update
         :param setting: the setting to change
         :param set_value: the value to set the setting to
         :returns: tuple[unknown list, failed list, passed list]
@@ -239,7 +231,7 @@ class ee_cli:
         self.check_if_logged_in()
 
 
-        for camera in camera_list:
+        for camera in cameras:
             self.run([CLI, "camera", "set", setting, set_value, "--esn", camera])
             status = self.run([CLI, "camera", "get", setting, "--esn", camera])
 
@@ -268,7 +260,54 @@ class ee_cli:
         
 
         return unknown, failed, passed
+
+    def test_update_cameras_by_list(self, camera_list: list[str], setting: str, set_value: str, option: Optional[str] = None) -> tuple[list, list, list]:
+        """
+        Testing new function to update camera settings using my self.keys and self.responses dictionaries for keys/expected responses
+        """
+
+        try:
+            possible_values = self.user_inputs[setting]
+            index = possible_values.index(set_value.lower())
+            set_value = self.set_values[setting][index]
+            good_response = self.responses[setting][index]
+            bad_response = self.responses[setting][(index + 1) % 2]
+            print(good_response, bad_response, bad_response_key, set_value)
+        except KeyError as key_err:
+            good_response = set_value
+        result = "30"
+        if result != good_response:
+            bad_response_key = "not_" + str(set_value)
+            start, end = self.responses[setting][0]
+            bad_response = set(range(start, end + 1)) - set([good_response])
+            print(good_response, bad_response, bad_response_key, set_value)
+        
+        return list(), list(), list()
+    
+    def get_camera_names_by_esn(self, cameras: list[str]) -> dict[str,str]:
+        """
+        :param cameras: list of cameras on account
+        :return: dict of camera ESN and names
+        """
+
+        camera_names = {}
+
+        self.check_if_logged_in()  # Ensure we are still logged in. Will work on a better solution...
+
+        for camera in cameras:
+            result = self.run([CLI, "camera", "get", "camera-name", "--esn", camera])
+            try:
+                parts = result.strip().split(None, 1)
+                name = parts[1].strip() if len(parts) > 1 else "unknown"
+                camera_names[camera] = name
+            except IndexError as err:
+                print(f'[!!] Index error for {camera}:{err}')
+                print(f"[+] Adding {camera} -> unknown name...")
+                camera_names[camera] = "unknown"
             
+        self.current_account_list.append({"camera_names": camera_names})
+        
+        return camera_names
 
     def get_all_camera_settings_by_esn(self, cameras: list[str], setting: str, option: Optional[list[str]] = None, key: Optional[str] = None) -> tuple[list, list, list]:
         """
@@ -281,19 +320,27 @@ class ee_cli:
         unmatched = []
         matched = []
         unknown = []
+        value_list = []
 
         
-
+        
         if not key:
-            key_off = self.keys[setting][0]                                       #  enabled
-            key_on = self.keys[setting][1]                                        #  not enabled
+            try:
+                key_off = self.keys[setting][0]                                       #  enabled
+                key_on = self.keys[setting][1]     
+            except KeyError as key_err:
+                key_value = setting                                   #  not enabled
         elif key:
             key_off = "not_" + key                                           #  enabled                                          
             key_on = key                                                     #  not enabled
+        
 
         if not option:
-            option = self.responses[setting][0]  #  enabled
-            option = self.responses[setting][1]  #  not enabled 
+            try:
+                option = self.responses[setting][0]  #  enabled
+                option = self.responses[setting][1]  #  not enabled 
+            except KeyError as key_err:
+                option = None
 
         
         self.check_if_logged_in()  # Ensure we are still logged in. Will work on a better solution...
@@ -323,6 +370,8 @@ class ee_cli:
                     matched.append(camera)
                 else:
                     unmatched.append(camera)
+            elif not option:
+                value_list.append({camera: setting_value})
             
         if unmatched:
             self.current_account_list.append({key_off: unmatched})
@@ -331,9 +380,12 @@ class ee_cli:
         if unknown:
             self.current_account_list.append({"unknown": unknown})
         
+        if value_list:
+            self.current_account_list.append({f"{setting}": value_list})
+        
         return unknown, unmatched, matched
     
-    
+
     def update_dict(self, key: str, data):
         """
         Write all in JSON format -> file.
@@ -372,10 +424,7 @@ class ee_cli:
         :return: filepath: str
         """
 
-        if file:
-            filepath = str(self.working_directory)+"/"+file
-        else: 
-            filepath = str(self.working_directory)+"/"+"output_"+self.account_id+"/report.json"
+        filepath = str(self.working_directory / self.out_dir) + "/" + file
         
         with open(filepath, "w") as json_writer:
             json.dump(self.my_dict, json_writer, indent=4)
@@ -395,7 +444,7 @@ class ee_cli:
 
     
     @staticmethod
-    def run(cmd: list[str]) -> str:
+    def run(cmd: list[str], stderr=True) -> str:
         """
         Running CLI command and returning STDOUT
 
@@ -420,3 +469,16 @@ class ee_cli:
             raise subprocess.CalledProcessError(result.returncode, cmd)'''
         
         return result.stdout
+    
+    def clean_account_names_for_output(self) -> str:
+        """
+        Docstring for clean_account_names_for_output
+        
+        :param self: Description
+        :return: Description
+        :rtype: str
+        """
+        
+        cleaned_accounts = "_".join(str(s) for s in self.account_list)
+
+        return cleaned_accounts
