@@ -8,24 +8,26 @@ import argparse
 ext = 'json'
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Process JSON reports for camera settings.')
-    parser.add_argument('--parent', required=True, help='Parent account ID')
-    parser.add_argument('--sub', required=True, help='Sub account ID')
-    parser.add_argument('--settings_keyword', required=True, help='Settings keyword')
-    parser.add_argument('--set_to', required=True, help='Set to value')
-    parser.add_argument('--positive_result', required=True, help='Positive result value')
-    parser.add_argument('--filename', required=True, help='Output filename')
-    args = parser.parse_args()
-
     # Initialize parser
+    augur = argparse.ArgumentParser(description="Fix cameras that were not updated in previous script run.")
+    augur.add_argument("-p", "--parent", required=True, help="Parent account ID")
+    augur.add_argument("-a", "--accounts", required=True, help="Sub account ID")
+    augur.add_argument("-s", "--setting", required=True, help="Setting keyword to check and update")
+    augur.add_argument("-t", "--set_to", required=True, help="Value to set the setting to (e.g. --enable or --disable)")
+    augur.add_argument("-r", "--positive_result", required=True, help="The expected value of the setting if it was set correctly (e.g. yes or no)")
+    augur.add_argument("-f", "--filename", required=True, help="Filename of the JSON report to parse")
+
+    args = augur.parse_args()
     parent = args.parent
-    sub = args.sub
-    settings_keyword = args.settings_keyword
+    sub = args.accounts
+    settings_keyword = args.setting
     set_to = args.set_to
     positive_result = args.positive_result
     filename = args.filename
-    username = 'username'  # Replace with actual username if needed
-    filepath = f'/home/{username}/ee_cli/output/{filename}'
+
+    user = 'username'  # Replace with actual computer username if needed
+
+    filepath = f'/home/{user}/ee_cli/output/{filename}'
 
     not_matching = 'failed'
     matching = 'passed'
@@ -122,7 +124,7 @@ if __name__ == "__main__":
         print(f"[!!] Unmatched items: {unmatched_items}")
 
         failed_items = []
-        '''for item in unmatched_items:
+        for item in unmatched_items:
             print(f'[->] Updating camera {item} to: {settings_keyword} {set_to}...')
             command = subprocess.run([CLI, 'camera', 'set', settings_keyword, set_to, '--esn', item], capture_output=True, text=True)
             print(command.stdout)
@@ -134,8 +136,4 @@ if __name__ == "__main__":
         if failed_items:
             print(f"[!!] Failed to update items: {failed_items}")
         else:
-            print("[!!] All items updated successfully!")'''
-
-
-        
-
+            print("[!!] All items updated successfully!")
